@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="ru" >
+  <head>
+    <title>Advanced py.test usage</title>
+    <meta name="description" content="">
+    <meta name="author" content="Andrew Svetlov">
+
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
+
+    <link rel="stylesheet" href="css/reveal.css">
+    <link rel="stylesheet" href="css/theme/custom.css" id="theme">
+
+    <!-- Code syntax highlighting -->
+    <link rel="stylesheet" href="lib/css/custom.css">
+
+    <!-- Printing and PDF exports -->
+    <script>
+     var link = document.createElement( 'link' );
+     link.rel = 'stylesheet';
+     link.type = 'text/css';
+     link.href = window.location.search.match( /print-pdf/gi ) ? 'css/print/pdf.css' : 'css/print/paper.css';
+     document.getElementsByTagName( 'head' )[0].appendChild( link );
+    </script>
+
+    <!--[if lt IE 9]>
+    <script src="lib/js/html5shiv.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+    <div class="reveal">
+      <div class="slides">
+        <section>
+          <h1>py.test</h1>
+          <h2>Advanced usage</h2>
+          <p>
+            Andrew Svetlov
+            <p>
+              <small>http://asvetlov.blogspot.com</small><br>
+              <small>andrew.svetlov@gmail.com</small><br>
+              <small>http://asvetlov.github.io/pytest-moscow</small>
+            </p>
+          </p>
+        </section>
+        <section>
+          <blockquote cite="http://bugs.python.org/issue17908">
+            &ldquo;Eveybody is
+            using py.test anyway...&rdquo;
+          </blockquote>
+          <p>Guido van Rossum</p>
+        </section>
+        <section data-background="magic-015.jpg" data-background-size="60%">
+        </section>
+        <section>
+          <section>
+            <h1>Basics</h1>
+          </section>
+          <section data-background="Jupiter_bayan_accordion.jpg" data-background-size="60%">
+          </section>
+          <section>
+            <h2>Basics</h2>
+            <pre><code>
+import pytest
+
+def test_a():
+    assert 1 != 2
+
+class TestB:
+    def test_b(self):
+        assert 'a'.upper() == 'A'
+
+    def test_c(self):
+        with pytest.raises(ZeroDivisionError):
+            1/0
+            </code></pre>
+          </section>
+        </section>
+
+        <section>
+          <section>
+            <h1>Fixtures</h1>
+          </section>
+          <section data-background="fixture.jpg" data-background-size="60%">
+          </section>
+          <section>
+            <h2>Fixture</h2>
+            <pre><code>
+import random
+
+@pytest.fixture
+def rnd():
+    return random.random()
+            </code></pre>
+            <pre class="fragment"><code>
+def test_rnd(rnd):
+    print(rnd)
+            </code></pre>
+          </section>
+          <section>
+            <h2>Fixture dependencies</h2>
+            <pre><code>
+@pytest.fixture
+def rnd_gen():
+    return random.Random(123456)
+
+
+@pytest.fixture
+def rnd(rnd_gen):
+    return rnd_gen.random()
+            </code></pre>
+          </section>
+          <section>
+            <h2>Fixture calculation</h2>
+            <pre><code>
+@pytest.fixture
+def fixture_a(rnd):
+    return rnd
+
+@pytest.fixture
+def fixture_b(rnd):
+    return rnd
+
+def test(fixture_a, fixture_b):
+    assert fixture_a == fixture_b  # ???
+            </code></pre>
+          </section>
+          <section>
+            <h2>Fixture factories</h2>
+            <pre><code>
+@pytest.fixture
+def make_rnd(rnd_gen):
+    def maker()
+        return rnd_gen.random()
+    return maker
+            </code></pre>
+            <pre class="fragment"><code>
+@pytest.fixture
+def fixture_a(rnd):
+    return rnd()
+
+@pytest.fixture
+def fixture_b(rnd):
+    return rnd()
+
+def test(fixture_a, fixture_b):
+    assert fixture_a == fixture_b  # ???
+              </code></pre>
+            </code></pre>
+          </section>
+          <section>
+            <h2>Resource cleanup</h2>
+            <pre><code>
+@pytest.yield_fixture
+def opened_file():
+    f = open("filename")
+    try:
+        yield f
+    finally:
+        f.close()
+            </code></pre>
+            <pre class="fragment"><code>
+def test_a(opened_file):
+    assert opened_file.read() == "file content"
+            </code></pre>
+          </section>
+          <section>
+            <h2>Cleanup for factories</h2>
+            <pre><code>
+@pytest.yield_fixture
+def open_file():
+    f = None
+    def opener(filename):
+        nonlocal f
+        assert f is None
+        f = open(filename)
+        return f
+    yield opener
+    if f is not None:
+        f.close()
+            </code></pre>
+            <pre class="fragment"><code>
+def test_a(open_file):
+    assert open_file("file_a.txt").read() == "Content A"
+    assert open_file("file_b.txt").read() == "Content B"
+            </code></pre>
+          </section>
+        </section>
+        <section>
+          <section>
+            <h1>Comparison with unittest</h1>
+          </section>
+          <section>
+            <h2>Monolithic test case</h2>
+            <pre><code>
+class TestA(unittest.TestCase):
+    def setUp(self):
+        self.redis = redis.Redis()
+        self.db = db.connect(':memory:')
+
+    def tearDown(self):
+        self.redis.close()
+        self.db.close()
+
+    def test_a(self):
+        self.db.execute(...)
+        self.redis.set(...)
+            </code></pre>
+          </section>
+          <section>
+            <h2>Mixin classes</h2>
+            <pre><code>
+class RedisMixin:
+    def setUp(self):
+        self.redis = Redis()
+        super().setUp()
+    def tearDown(self):
+        self.redis.close()
+        super().tearDown()
+
+class DBMixin:
+    def setUp(self):
+        self.db = sqlite3.connect(':memory:')
+        super().setUp()
+    def tearDown(self):
+        self.db.close()
+        super().tearDown()
+            </code></pre>
+          </section>
+          <section>
+            <pre><code>
+class TestA(RedisMixin, DBMixin, unittest.TestCase):
+    def setUp(self):
+        self.val = 'value'
+        super().setUp()
+
+    def tearDown(self):
+        ...
+        super().tearDown()
+
+    def test_a(self):
+        self.db.execute(...)
+        self.redis.set(...)
+            </code></pre>
+          </section>
+          <section>
+            <h2>py.test</h2>
+            <pre><code>
+@pytest.yield_fixture
+def redis():
+    with Redis() as redis:
+        yield redis
+
+@pytest.yield_fixture
+def db():
+    with sqlite3.connect(':memory:') as db:
+        yield db
+
+def test_a(db, redis):
+    db.execute(...)
+    redis.set(...)
+            </code></pre>
+          </section>
+          <section>
+            <h2>Transactions</h2>
+            <pre><code>
+@pytest.yield_fixture
+def transaction(db):
+    cursor = db.cursor()
+    try:
+       yield cursor
+       db.commit()
+    except:
+       db.rollback()
+            </code></pre>
+
+            <pre class="fragment"><code>
+def test_b(transaction):
+    transaction.execute("INSERT INTO tbl(name) VALUES ('John')")
+    raise RuntimeError("Error text")
+    transaction.execute("INSERT INTO tbl(name) VALUES ('Mary')")
+            </code></pre>
+          </section>
+        </section>
+        <section>
+          <section>
+            <h1>Project structure</h1>
+          </section>
+          <section>
+            <ul>
+              <li><b>root</b></li>
+              <ul>
+                <li><b>project</b></li>
+                <ul>
+                  <li>__init__.py</li>
+                  <li>...</li>
+                </ul>
+                <li><b>tests</b></li>
+                <ul>
+                  <li><i>conftest.py</i></li>
+                  <li><i>redis_fixtures.py</i></li>
+                  <li><i>db_fixtures.py</i></li>
+                  <li>test_a.py</li>
+                </ul>
+                <li><i>setup.py</i></li>
+              </ul>
+            </ul>
+            <p class="fragment">
+              <b>No <i>__init__.py</i> in <i>tests</i> folder</b>
+            </p>
+          </section>
+          <section>
+            <h2>conftest.py</h2>
+            <pre><code>
+import pytest
+
+pytest_plugins = ['redis_fixtures', 'db_fixtures']
+
+@pytest.fixture
+def fixture_a():
+    return 'value'
+            </code></pre>
+            <p class="fragment">
+              <b>No fixture imports in <i>conftest.py</i></b>
+            </p>
+          </section>
+        </section>
+        <section>
+          <section>
+            <h1>Docker and tests</h1>
+          </section>
+          <section data-background="docker.jpg" data-background-size="60%">
+          </section>
+
+          <section>
+            <h2>Fixture scope</h2>
+            <ul>
+              <li>function</li>
+              <li>class</li>
+              <li>module</li>
+              <li>session</li>
+            </ul>
+          </section>
+
+          <section>
+            <h2> Unique ID and docker client</h2>
+            <pre><code>
+import docker as libdocker
+
+@pytest.fixture(scope='session')
+def session_id():
+    return str(uuid.uuid4())
+@pytest.fixture(scope='session')
+def unused_port():
+    def f():
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(('127.0.0.1', 0))
+            return s.getsockname()[1]
+    return f
+@pytest.fixture(scope='session')
+def docker():
+    return libdocker.Client(version='auto')
+            </code></pre>
+          </section>
+          <section>
+            <h2>Running container</h2>
+            <pre><code>
+@pytest.yield_fixture(scope='session')
+def redis_server(unused_port, session_id, docker):
+    docker.pull('redis')
+    port = unused_port()
+    container = docker.create_container(
+        image='redis',
+        name='test-redis-{}'.format(session_id),
+        ports=[6379], detach=True,
+        host_config=docker.create_host_config(
+            port_bindings={6379: port}))
+    docker.start(container=container['Id'])
+    ping_redis(port)  # N.B.
+    container['redis_port'] = port
+    yield container
+    docker.kill(container=container['Id'])
+    docker.remove_container(container['Id'])
+            </code></pre>
+          </section>
+          <section>
+            <h2>Ping Redis</h2>
+            <pre><code>
+def ping_redis(port)
+    timeout = 0.001
+    for i in range(100):
+        try:
+            client = redis.StrictRedis(host='127.0.0.1',
+                                       port=port, db=0)
+        except redis.ConnectionError:
+            time.sleep(timeout)
+            timeout *= 2
+        else:
+            client.close()
+    else:
+        raise RuntimeError("Cannot connect to redis")
+            </code></pre>
+          </section>
+          <section>
+            <h2>Redis client</h2>
+            <pre><code>
+@pytest.yield_fixture
+def redis_client(redis_server):
+    client = redis.StrictRedis(host='127.0.0.1',
+                               port=redis_server['redis_port'],
+                               db=0)
+    yield client
+    client.flushdb()
+    client.close()
+            </code></pre>
+          </section>
+
+          <section>
+            <h2>Test</h2>
+            <pre><code>
+def test_redis(redis_client):
+    redis_client.set(b'key', b'value')
+    assert redis_client.get(b'key') == b'value'
+            </code></pre>
+          </section>
+        </section>
+        <section>
+          <section>
+            <h1>Plugins</h1>
+          </section>
+          <section data-background="vudu.jpg" data-background-size="60%">
+          </section>
+          <section>
+            <h2>Test skipping</h2>
+            <pre><code>
+@pytest.mark.skipif(sys.version_info < (3, 4, 1),
+                    reason="Python<3.4.1 doesnt support "
+                           "__del__ calls from GC")
+def test___del__():
+    ...
+            </code></pre>
+          </section>
+          <section>
+            <h2>Test exclusion</h2>
+            <pre><code>
+def pytest_ignore_collect(path, config):
+    if 'py35' in str(path):
+        if sys.version_info < (3, 5, 0):
+            return True
+            </code></pre>
+            <ul class="fragment">
+              <li><b>tests</b></li>
+              <ul>
+                <li>conftest.py</li>
+                <li>...</li>
+                <li><b>py35</b></li>
+                <ul>
+                  <li>test_1.py</li>
+                  <li>test_2.py</li>
+                </ul>
+          </section>
+
+        </section>
+        <section data-background="commandline.jpg" data-background-size="60%">
+        </section>
+          <section>
+            <h2>Add new cmdline argument</h2>
+            <pre><code>
+def pytest_addoption(parser):
+    parser.addoption('--gc-collect', action='store_true',
+                     default=False,
+                     help="Perform GC collection after every test")
+
+@pytest.mark.trylast
+def pytest_runtest_teardown(item, nextitem):
+    if item.config.getoption('--gc-collect'):
+        gc.collect()
+    return nextitem
+            </code></pre>
+            <pre class="fragment"><code>$ py.test --gc-collect</code></pre>
+          </section>
+          <section>
+            <h2>Fixture parametrization</h2>
+            <pre><code>
+@pytest.yield_fixture(scope='session', params=['2.8', '3.0'])
+def redis_server(unused_port, session_id, docker, request):
+    redis_version = request.param
+    image = 'redis:{}'.format(redis_version)
+    docker.pull(image)
+    container = docker.create_container(
+        image=image,
+        name='test-redis-{}-{}'.format(redis_version, session_id),
+        ...)
+
+    ...
+            </code></pre>
+          </section>
+          <section>
+            <h2>Fixture generation</h2>
+            <pre><code>
+def pytest_addoption(parser):
+    parser.addoption("--redis_version", action="append", default=[],
+                     help=("Redis server versions. "
+                           "May be used several times. "
+                           "Available values: 2.8, 3.0, 3.2 all"))
+def pytest_generate_tests(metafunc):
+    if 'redis_version' in metafunc.fixturenames:
+        tags = set(metafunc.config.option.redis_version)
+        if not tags:
+            tags = ['3.2']
+        elif 'all' in tags:
+            tags = ['2.8', '3.0', '3.2']
+        else:
+            tags = list(tags)
+        metafunc.parametrize("redis_version", tags, scope='session')
+            </code></pre>
+          </section>
+          <section>
+            <h2>Using generated funcarg</h2>
+            <pre><code>
+@pytest.yield_fixture(scope='session')
+def redis_server(unused_port, session_id, docker, redis_version):
+    image = 'redis:{}'.format(redis_version)
+    docker.pull(image)
+    container = docker.create_container(
+        image=image,
+        name='test-redis-{}-{}'.format(redis_version, session_id),
+        ...)
+
+    ...
+            </code></pre>
+          </section>
+
+          <section>
+            <h2>Skip long-running tests</h2>
+            <pre><code>
+def pytest_addoption(parser):
+    parser.addoption('--run-slow', action='store_true',
+                     default=False,
+                     help="Run slow tests")
+
+def pytest_runtest_setup(item):
+    if ('slowtest' in item.keywords and
+            (not item.config.getoption('--run-slow'))):
+        pytest.skip('Need --run-slow to run')
+
+@pytest.mark.slowtest
+def test_xxx():
+    ...
+            </code></pre>
+
+            <pre><code>
+py.test --run-slow
+              </code></pre>
+            </script>
+          </section>
+        </section>
+
+        <section>
+          <h1>Questions?</h1>
+          <p>
+            Andrew Svetlov
+            <p>
+            <small>http://asvetlov.blogspot.com</small><br>
+            <small>andrew.svetlov@gmail.com</small>
+            </p>
+          </p>
+        </section>
+      </div>
+    </div>
+
+    <script src="lib/js/head.min.js"></script>
+    <script src="js/reveal.js"></script>
+
+    <script>
+     // Full list of configuration options available at:
+     // https://github.com/hakimel/reveal.js#configuration
+     Reveal.initialize({
+       controls: true,
+       progress: true,
+       history: true,
+       center: true,
+       slideNumber: true,
+       transition: 'slide', // none/fade/slide/convex/concave/zoom
+       // Optional reveal.js plugins
+       dependencies: [
+         { src: 'lib/js/classList.js', condition: function() { return !document.body.classList; } },
+         { src: 'plugin/markdown/marked.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+         { src: 'plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+         { src: 'plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } },
+         { src: 'plugin/zoom-js/zoom.js', async: true },
+         { src: 'plugin/notes/notes.js', async: true }
+       ]
+     });
+    </script>
+
+  </body>
+</html>
