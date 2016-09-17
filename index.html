@@ -33,7 +33,8 @@
     <div class="reveal">
       <div class="slides">
         <section>
-          <h1>Building robust test suite using pytest and docker</h1>
+          <h1>Robust tests</h1>
+          <h2>with pytest and docker</h2>
           <p>
             Andrew Svetlov
             <p>
@@ -44,319 +45,162 @@
           </p>
         </section>
         <section>
-          <blockquote cite="http://bugs.python.org/issue17908">
-            &ldquo;Eveybody is
-            using py.test anyway...&rdquo;
-          </blockquote>
-          <p>Guido van Rossum</p>
-        </section>
-        <section data-background="magic-015.jpg" data-background-size="60%">
+          <section>
+            <h1>The Problem</h1>
+          </section>
+          <section data-background="broken-light-bulbs-drawings-amazing-design-4.jpg" data-background-size="60%">
+          </section>
+          <section>
+            <h2>Test environment</h2>
+            <ul>
+              <li>Python test suite</li>
+              <li class="fragment">Redis server</li>
+              <li class="fragment">Postgres Server</li>
+              <li class="fragment">RabbitMQ</li>
+              <li class="fragment">...</li>
+            </ul>
+          </section>
+          <section>
+            <h2>Local services</h2>
+            <p>
+              <pre><code class="bash">
+$ sudo apt-get install redis-server
+$ sudo apt-get install postgresql
+...
+              </code></pre>
+            </p>
+          </section>
+          <section>
+            <h2>Local db setup</h2>
+            <p>
+              <pre><code class="sql">
+# CREATE USER test_user WITH PASSWORD 'myPassword';
+# CREATE DATABASE test_db;
+# GRANT ALL PRIVILEGES ON DATABASE test_db to test_user;
+              </code></pre>
+            </p>
+          </section>
+          <section>
+            <h2>Execution</h2>
+            <p>
+              <pre><code class="bash">
+$ DB=test_db DBUSER=test_user DBPASS=myPassword pytest ./tests
+              </code></pre>
+            </p>
+          </section>
+          <section>
+            <h2>Test on multiple DB versions</h2>
+            <p><b>aiopg</b> is tested over:</p>
+            <ul>
+              <li>PostgreSQL 9.3</li>
+              <li>PostgreSQL 9.4</li>
+              <li>PostgreSQL 9.5</li>
+            </ul>
+          </section>
         </section>
         <section>
           <section>
-            <h1>Basics</h1>
+            <h1>Naive Solution</h1>
           </section>
-          <section data-background="Jupiter_bayan_accordion.jpg" data-background-size="60%">
+          <section data-background="Habitat-67-Montreal-1.jpg" data-background-size="60%">
           </section>
           <section>
-            <h2>Basics</h2>
+            <h2>Have own test services</h2>
+            <p>Every service should be started/stopeed by test runner</p>
+          </section>
+          <section>
             <pre><code>
-import pytest
+pg_prefix = pathlib.Path('/usr/lib/postgresql')
+if (pg_prefix / '9.4').is_dir():
+    pg_prefix = pg_prefix / '9.4'
+elif (pg_prefix / '9.3').is_dir():
+    pg_prefix = pg_prefix / '9.3'
+pg_ctl = pg_prefix / 'bin/pg_ctl'
 
-def test_a():
-    assert 1 != 2
-
-class TestB:
-    def test_b(self):
-        assert 'a'.upper() == 'A'
-
-    def test_c(self):
-        with pytest.raises(ZeroDivisionError):
-            1/0
+data_dir = tmp_dir / 'lib/postgresql'
+run_dir = tmp_dir / 'run/postgresql'
+# ...
+            </code></pre>
+          </section>
+          <section>
+            <pre><code>
+server_options = ('-p {port} -k {run_dir} '
+                  '--fsync=off '
+                  '--full_page_writes=off '
+                  '--synchronous_commit=off '
+                  '--wal_buffers=512kB '
+                  '--commit_delay=100000 '
+                  ...
+                  '--autovacuum=off ').format(
+    port=port, run_dir=str(run_dir))
+subprocess.run(pg_ctl, 'restart',
+               '--pgdata', data_dir,
+               '-w', '--timeout', 10,
+               '--log', log_file,
+               '-o', server_options)
             </code></pre>
           </section>
         </section>
-
         <section>
+          <section>
+            <h1>Dockerize 'Em All!</h1>
+          </section>
+          <section data-background="docker.jpg" data-background-size="60%">
+          </section>
+          <section>
+            <h2>docker-compose.yml</h2>
+            <pre><code>
+web:
+    build: web
+    volumes:
+        - web:/code
+    ports:
+        - "80:5000"
+    links:
+        - redis
+    command: pytest ./tests
+redis:
+    image: redis:2.8.19
+    ports:
+        - "6379:6379"
+          </code></pre>
+          </section>
+          <section>
+            <h2>Problems or Think about:</h2>
+            <ul>
+              <li>Multiple DB versions</li>
+              <li>Quick run of the single test</li>
+              <li>Debugging</li>
+            </ul>
+          </section>
+        </section>
+        <section>
+          <section>
+            <h1>Pytest's superpower</h1>
+          </section>
+          <section data-background="magic-015.jpg" data-background-size="60%">
+          </section>
+          <section>
+            <blockquote cite="http://bugs.python.org/issue17908">
+              &ldquo;Eveybody is
+              using py.test anyway...&rdquo;
+            </blockquote>
+            <p>Guido van Rossum</p>
+          </section>
           <section>
             <h1>Fixtures</h1>
           </section>
           <section data-background="fixture.jpg" data-background-size="60%">
           </section>
           <section>
-            <h2>Fixture</h2>
-            <pre><code>
-import random
-
-@pytest.fixture
-def rnd():
-    return random.random()
-            </code></pre>
-            <pre class="fragment"><code>
-def test_rnd(rnd):
-    print(rnd)
-            </code></pre>
-          </section>
-          <section>
-            <h2>Fixture dependencies</h2>
-            <pre><code>
-@pytest.fixture
-def rnd_gen():
-    return random.Random(123456)
-
-
-@pytest.fixture
-def rnd(rnd_gen):
-    return rnd_gen.random()
-            </code></pre>
-          </section>
-          <section>
-            <h2>Fixture calculation</h2>
-            <pre><code>
-@pytest.fixture
-def fixture_a(rnd):
-    return rnd
-
-@pytest.fixture
-def fixture_b(rnd):
-    return rnd
-
-def test(fixture_a, fixture_b):
-    assert fixture_a == fixture_b  # ???
-            </code></pre>
-          </section>
-          <section>
-            <h2>Fixture factories</h2>
-            <pre><code>
-@pytest.fixture
-def make_rnd(rnd_gen):
-    def maker()
-        return rnd_gen.random()
-    return maker
-            </code></pre>
-            <pre class="fragment"><code>
-@pytest.fixture
-def fixture_a(rnd):
-    return rnd()
-
-@pytest.fixture
-def fixture_b(rnd):
-    return rnd()
-
-def test(fixture_a, fixture_b):
-    assert fixture_a == fixture_b  # ???
-              </code></pre>
-            </code></pre>
-          </section>
-          <section>
-            <h2>Resource cleanup</h2>
-            <pre><code>
-@pytest.yield_fixture
-def opened_file():
-    f = open("filename")
-    try:
-        yield f
-    finally:
-        f.close()
-            </code></pre>
-            <pre class="fragment"><code>
-def test_a(opened_file):
-    assert opened_file.read() == "file content"
-            </code></pre>
-          </section>
-          <section>
-            <h2>Cleanup for factories</h2>
-            <pre><code>
-@pytest.yield_fixture
-def open_file():
-    f = None
-    def opener(filename):
-        nonlocal f
-        assert f is None
-        f = open(filename)
-        return f
-    yield opener
-    if f is not None:
-        f.close()
-            </code></pre>
-            <pre class="fragment"><code>
-def test_a(open_file):
-    assert open_file("file_a.txt").read() == "Content A"
-    assert open_file("file_b.txt").read() == "Content B"
-            </code></pre>
-          </section>
-        </section>
-        <section>
-          <section>
-            <h1>Comparison with unittest</h1>
-          </section>
-          <section>
-            <h2>Monolithic test case</h2>
-            <pre><code>
-class TestA(unittest.TestCase):
-    def setUp(self):
-        self.redis = redis.Redis()
-        self.db = db.connect(':memory:')
-
-    def tearDown(self):
-        self.redis.close()
-        self.db.close()
-
-    def test_a(self):
-        self.db.execute(...)
-        self.redis.set(...)
-            </code></pre>
-          </section>
-          <section>
-            <h2>Mixin classes</h2>
-            <pre><code>
-class RedisMixin:
-    def setUp(self):
-        self.redis = Redis()
-        super().setUp()
-    def tearDown(self):
-        self.redis.close()
-        super().tearDown()
-
-class DBMixin:
-    def setUp(self):
-        self.db = sqlite3.connect(':memory:')
-        super().setUp()
-    def tearDown(self):
-        self.db.close()
-        super().tearDown()
-            </code></pre>
-          </section>
-          <section>
-            <pre><code>
-class TestA(RedisMixin, DBMixin, unittest.TestCase):
-    def setUp(self):
-        self.val = 'value'
-        super().setUp()
-
-    def tearDown(self):
-        ...
-        super().tearDown()
-
-    def test_a(self):
-        self.db.execute(...)
-        self.redis.set(...)
-            </code></pre>
-          </section>
-          <section>
-            <h2>py.test</h2>
-            <pre><code>
-@pytest.yield_fixture
-def redis():
-    with Redis() as redis:
-        yield redis
-
-@pytest.yield_fixture
-def db():
-    with sqlite3.connect(':memory:') as db:
-        yield db
-
-def test_a(db, redis):
-    db.execute(...)
-    redis.set(...)
-            </code></pre>
-          </section>
-          <section>
-            <h2>Transactions</h2>
-            <pre><code>
-@pytest.yield_fixture
-def transaction(db):
-    cursor = db.cursor()
-    try:
-       yield cursor
-       db.commit()
-    except:
-       db.rollback()
-            </code></pre>
-
-            <pre class="fragment"><code>
-def test_b(transaction):
-    transaction.execute("INSERT INTO tbl(name) VALUES ('John')")
-    raise RuntimeError("Error text")
-    transaction.execute("INSERT INTO tbl(name) VALUES ('Mary')")
-            </code></pre>
-          </section>
-        </section>
-        <section>
-          <section>
-            <h1>Project structure</h1>
-          </section>
-          <section>
-            <ul>
-              <li><b>root</b></li>
-              <ul>
-                <li><b>project</b></li>
-                <ul>
-                  <li>__init__.py</li>
-                  <li>...</li>
-                </ul>
-                <li><b>tests</b></li>
-                <ul>
-                  <li><i>conftest.py</i></li>
-                  <li><i>redis_fixtures.py</i></li>
-                  <li><i>db_fixtures.py</i></li>
-                  <li>test_a.py</li>
-                </ul>
-                <li><i>setup.py</i></li>
-              </ul>
-            </ul>
-            <p class="fragment">
-              <b>No <i>__init__.py</i> in <i>tests</i> folder</b>
-            </p>
-          </section>
-          <section>
-            <h2>conftest.py</h2>
-            <pre><code>
-import pytest
-
-pytest_plugins = ['redis_fixtures', 'db_fixtures']
-
-@pytest.fixture
-def fixture_a():
-    return 'value'
-            </code></pre>
-            <p class="fragment">
-              <b>No fixture imports in <i>conftest.py</i></b>
-            </p>
-          </section>
-        </section>
-        <section>
-          <section>
-            <h1>Docker and tests</h1>
-          </section>
-          <section data-background="docker.jpg" data-background-size="60%">
-          </section>
-
-          <section>
-            <h2>Fixture scope</h2>
-            <ul>
-              <li>function</li>
-              <li>class</li>
-              <li>module</li>
-              <li>session</li>
-            </ul>
-          </section>
-
-          <section>
-            <h2> Unique ID and docker client</h2>
+            <h2>Unique ID and docker client</h2>
             <pre><code>
 import docker as libdocker
 
 @pytest.fixture(scope='session')
 def session_id():
     return str(uuid.uuid4())
-@pytest.fixture(scope='session')
-def unused_port():
-    def f():
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(('127.0.0.1', 0))
-            return s.getsockname()[1]
-    return f
+
 @pytest.fixture(scope='session')
 def docker():
     return libdocker.Client(version='auto')
@@ -366,203 +210,145 @@ def docker():
             <h2>Running container</h2>
             <pre><code>
 @pytest.yield_fixture(scope='session')
-def redis_server(unused_port, session_id, docker):
-    docker.pull('redis')
-    port = unused_port()
+def pg_server(docker, session_id, request):
+    docker.pull('postgres:latest')
     container = docker.create_container(
-        image='redis',
-        name='test-redis-{}'.format(session_id),
-        ports=[6379], detach=True,
-        host_config=docker.create_host_config(
-            port_bindings={6379: port}))
+        image='postgres:latest'
+        name='aiopg-test-server-{}'.format(session_id),
+        ports=[5432], detach=True)
     docker.start(container=container['Id'])
-    ping_redis(port)  # N.B.
-    container['redis_port'] = port
+    inspection = docker.inspect_container(container['Id'])
+    host = inspection['NetworkSettings']['IPAddress']
+    ...
+            </code></pre>
+          </section>
+          <section>
+            <pre><code class="python">
+    ...
+    pg_params = dict(database='postgres',
+                     user='postgres',
+                     password='mysecretpassword',
+                     host=host,
+                     port=5432)
+    ping_postgres(**pgparams)
+    container['pg_params'] = pg_params
     yield container
+
     docker.kill(container=container['Id'])
     docker.remove_container(container['Id'])
             </code></pre>
           </section>
           <section>
-            <h2>Ping Redis</h2>
-            <pre><code>
-def ping_redis(port)
-    timeout = 0.001
+            <h2>Ping DB</h2>
+            <pre><code  class="python">
+def ping_postgres(**pg_params):
+    delay = 0.001
     for i in range(100):
         try:
-            client = redis.StrictRedis(host='127.0.0.1',
-                                       port=port, db=0)
-        except redis.ConnectionError:
-            time.sleep(timeout)
-            timeout *= 2
-        else:
-            client.close()
+            conn = psycopg2.connect(**pg_params)
+            cur = conn.cursor()
+            cur.execute("CREATE EXTENSION hstore;")
+            cur.close()
+            conn.close()
+            break
+        except psycopg2.Error:
+            time.sleep(delay)
+            delay *= 2
     else:
-        raise RuntimeError("Cannot connect to redis")
+        raise RuntimeError("Cannot start postgres server")
             </code></pre>
           </section>
           <section>
-            <h2>Redis client</h2>
+            <h2>Postgres client</h2>
             <pre><code>
 @pytest.yield_fixture
-def redis_client(redis_server):
-    client = redis.StrictRedis(host='127.0.0.1',
-                               port=redis_server['redis_port'],
-                               db=0)
-    yield client
-    client.flushdb()
-    client.close()
+def pg_client(pg_server):
+    conn = psycopg2.connect(**pg_server[pg_params])
+    yield conn
+    conn.close()
             </code></pre>
           </section>
 
           <section>
             <h2>Test</h2>
             <pre><code>
-def test_redis(redis_client):
-    redis_client.set(b'key', b'value')
-    assert redis_client.get(b'key') == b'value'
+def test_pg(pg_client):
+    cur = pg_client.cursor()
+    cur.execute("SELECT ...")
+    rows = cur.fetchall()
+    assert len(rows) == 5
+    for row in rows:
+       ...
             </code></pre>
           </section>
         </section>
         <section>
           <section>
-            <h1>Plugins</h1>
+            <h1>Further Improvements</h1>
           </section>
           <section data-background="vudu.jpg" data-background-size="60%">
           </section>
           <section>
-            <h2>Test skipping</h2>
-            <pre><code>
-@pytest.mark.skipif(sys.version_info < (3, 4, 1),
-                    reason="Python<3.4.1 doesnt support "
-                           "__del__ calls from GC")
-def test___del__():
-    ...
-            </code></pre>
+            <h2>Test on Different PostgreSQL versions</h2>
+            <ul>
+              <li>PostgreSQL 9.3</li>
+              <li>PostgreSQL 9.4</li>
+              <li>PostgreSQL 9.5</li>
+            </ul>
+          </section>
+          <section data-background="commandline.jpg" data-background-size="60%">
           </section>
           <section>
-            <h2>Test exclusion</h2>
-            <pre><code>
-def pytest_ignore_collect(path, config):
-    if 'py35' in str(path):
-        if sys.version_info < (3, 5, 0):
-            return True
-            </code></pre>
-            <ul class="fragment">
-              <li><b>tests</b></li>
-              <ul>
-                <li>conftest.py</li>
-                <li>...</li>
-                <li><b>py35</b></li>
-                <ul>
-                  <li>test_1.py</li>
-                  <li>test_2.py</li>
-                </ul>
-          </section>
-
-        </section>
-        <section data-background="commandline.jpg" data-background-size="60%">
-        </section>
-          <section>
-            <h2>Add new cmdline argument</h2>
+            <h2>Cmdline options</h2>
             <pre><code>
 def pytest_addoption(parser):
-    parser.addoption('--gc-collect', action='store_true',
-                     default=False,
-                     help="Perform GC collection after every test")
+    parser.addoption("--pg_tag", action="append", default=[],
+                     help=("Postgres server versions. "
+                           "May be used several times. "
+                           "Available values: 9.3, 9.4, 9.5, all"))
+    parser.addoption("--no-pull", action="store_true", default=False,
+                     help="Don't perform docker images pulling")
 
-@pytest.mark.trylast
-def pytest_runtest_teardown(item, nextitem):
-    if item.config.getoption('--gc-collect'):
-        gc.collect()
-    return nextitem
             </code></pre>
-            <pre class="fragment"><code>$ py.test --gc-collect</code></pre>
           </section>
           <section>
             <h2>Fixture parametrization</h2>
             <pre><code>
-@pytest.yield_fixture(scope='session', params=['2.8', '3.0'])
-def redis_server(unused_port, session_id, docker, request):
-    redis_version = request.param
-    image = 'redis:{}'.format(redis_version)
-    docker.pull(image)
-    container = docker.create_container(
-        image=image,
-        name='test-redis-{}-{}'.format(redis_version, session_id),
-        ...)
-
-    ...
-            </code></pre>
-          </section>
-          <section>
-            <h2>Fixture generation</h2>
-            <pre><code>
-def pytest_addoption(parser):
-    parser.addoption("--redis_version", action="append", default=[],
-                     help=("Redis server versions. "
-                           "May be used several times. "
-                           "Available values: 2.8, 3.0, 3.2 all"))
 def pytest_generate_tests(metafunc):
-    if 'redis_version' in metafunc.fixturenames:
-        tags = set(metafunc.config.option.redis_version)
+    if 'pg_tag' in metafunc.fixturenames:
+        tags = set(metafunc.config.option.pg_tag)
         if not tags:
-            tags = ['3.2']
+            tags = ['9.5']
         elif 'all' in tags:
-            tags = ['2.8', '3.0', '3.2']
+            tags = ['9.3', '9.4', '9.5']
         else:
             tags = list(tags)
-        metafunc.parametrize("redis_version", tags, scope='session')
+        metafunc.parametrize("pg_tag", tags, scope='session')
             </code></pre>
           </section>
           <section>
-            <h2>Using generated funcarg</h2>
+            <h2>Updated fixture for pg server</h2>
             <pre><code>
 @pytest.yield_fixture(scope='session')
-def redis_server(unused_port, session_id, docker, redis_version):
-    image = 'redis:{}'.format(redis_version)
-    docker.pull(image)
+def pg_server(docker, session_id, pg_tag, request):
+    if not request.config.option.no_pull:
+        docker.pull('postgres:{}'.format(pg_tag))
     container = docker.create_container(
-        image=image,
-        name='test-redis-{}-{}'.format(redis_version, session_id),
-        ...)
-
+        image='postgres:{}'.format(pg_tag),
+        name='aiopg-test-server-{}-{}'.format(pg_tag, session_id),
+        ports=[5432], detach=True)
     ...
             </code></pre>
-          </section>
-
-          <section>
-            <h2>Skip long-running tests</h2>
-            <pre><code>
-def pytest_addoption(parser):
-    parser.addoption('--run-slow', action='store_true',
-                     default=False,
-                     help="Run slow tests")
-
-def pytest_runtest_setup(item):
-    if ('slowtest' in item.keywords and
-            (not item.config.getoption('--run-slow'))):
-        pytest.skip('Need --run-slow to run')
-
-@pytest.mark.slowtest
-def test_xxx():
-    ...
-            </code></pre>
-
-            <pre><code>
-py.test --run-slow
-              </code></pre>
-            </script>
           </section>
         </section>
-
         <section>
           <h1>Questions?</h1>
           <p>
             Andrew Svetlov
             <p>
-            <small>http://asvetlov.blogspot.com</small><br>
-            <small>andrew.svetlov@gmail.com</small>
+              <small>http://asvetlov.blogspot.com</small><br>
+              <small>andrew.svetlov@gmail.com</small><br>
+              <small>http://asvetlov.github.io/pytest-and-docker-kyiv-2016/</small>
             </p>
           </p>
         </section>
