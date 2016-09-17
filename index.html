@@ -157,12 +157,12 @@ web:
     ports:
         - "80:5000"
     links:
-        - redis
+        - postgres
     command: pytest ./tests
 redis:
-    image: redis:2.8.19
+    image: postgres:9.5
     ports:
-        - "6379:6379"
+        - "5432:5432"
           </code></pre>
           </section>
           <section>
