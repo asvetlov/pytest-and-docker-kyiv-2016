@@ -1,5 +1,5 @@
 # pytests-lviv
-Presentation for Advanced py.test usage talk
+Presentation for "Building robust test suite using pytest and docker" talk.
 
 
-Open http://asvetlov.github.io/pytest-moscow/
+Open http://asvetlov.github.io/pytest-and-docker-kyiv-2016/
